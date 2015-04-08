@@ -50,6 +50,7 @@ class WC_Gateway_PayPal_Express_AngellEYE extends WC_Payment_Gateway {
         $this->angelleye_skip_text     = isset( $this->settings['angelleye_skip_text'] ) ? $this->settings['angelleye_skip_text'] : '';
         $this->skip_final_review	   = isset( $this->settings['skip_final_review'] ) ? $this->settings['skip_final_review'] : '';
         $this->billing_address	       = isset( $this->settings['billing_address'] ) ? $this->settings['billing_address'] : 'no';
+        $this->enable_guest_checkout   = get_option( 'woocommerce_enable_guest_checkout' ) == 'yes' ? true : false;
 
         /*
         ' Define the PayPal Redirect URLs.
@@ -836,11 +837,6 @@ class WC_Gateway_PayPal_Express_AngellEYE extends WC_Payment_Gateway {
 			{
                 $this->add_log( "...ERROR: GetShippingDetails returned empty result" );
             }
-            if($this->skip_final_review == 'yes'){
-                $url = add_query_arg( array('wc-api'=>'WC_Gateway_PayPal_Express_AngellEYE', 'pp_action' => 'payaction' ), home_url());
-                wp_redirect($url);
-                exit();
-            }
 
             if(isset($_POST['createaccount'])){
                 if(empty($_POST['username'])){
@@ -856,11 +852,14 @@ class WC_Gateway_PayPal_Express_AngellEYE extends WC_Payment_Gateway {
                 }elseif(get_user_by( 'email',  $_POST['email'])!=false){
                     wc_add_notice(__('This email address is already registered.', 'paypal-for-woocommerce'), 'error');
                 }else{
-                    $data  = array(
+
+                    $data  = apply_filters( 'woocommerce_new_customer_data', array(
                         'user_login' => addslashes( $_POST['username'] ),
                         'user_email' => addslashes( $_POST['email'] ),
                         'user_pass' => addslashes( $_POST['password'] ),
-                    );
+                        'role'       => 'customer'
+                    ));
+
                     $userID = wp_insert_user($data);
                     if( !is_wp_error($userID) ) {
                         update_user_meta( $userID, 'billing_first_name',  $result['FIRSTNAME'] );
@@ -884,12 +883,19 @@ class WC_Gateway_PayPal_Express_AngellEYE extends WC_Payment_Gateway {
                         else
                         {
                             wp_set_current_user($user->ID); //Here is where we update the global user variables
+                            do_action( 'woocommerce_created_customer', $user->ID, $data, false );
                             header("Refresh:0");
                             die();
                         }
                     }
 
                 }
+            }
+            $this->must_create_account     = $this->enable_guest_checkout || is_user_logged_in() ? false : true;
+            if(!$this->must_create_account && $this->skip_final_review == 'yes'){
+                $url = add_query_arg( array('wc-api'=>'WC_Gateway_PayPal_Express_AngellEYE', 'pp_action' => 'payaction' ), home_url());
+                wp_redirect($url);
+                exit();
             }
         }
 		elseif ( isset( $_GET['pp_action'] ) && $_GET['pp_action'] == 'payaction' )
